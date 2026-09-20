@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import DatabaseUnavailable, check_database_ready, get_db
 from app.models.models import Building, CallTicket, DispatchLog, ElevatorCar
 from app.schemas.schemas import (
     BuildingOut,
@@ -20,7 +21,28 @@ api_router = APIRouter()
 
 @api_router.get("/health")
 def health():
+    """存活探针（liveness）：仅表示进程可响应，不探测数据库。
+
+    即使数据库宕机也返回 200；编排系统不应据此派发流量。
+    """
     return {"status": "ok"}
+
+
+@api_router.get("/readyz")
+def readyz():
+    """就绪探针（readiness）：进程可响应且数据库可连接、业务表可用。
+
+    只读探测 buildings 表，不创建呼梯、不写派工回放。
+    数据库不可用或探测超时时返回 503，正文含稳定字段 status=not_ready 与原因。
+    """
+    try:
+        check_database_ready()
+    except DatabaseUnavailable as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "reason": exc.reason},
+        )
+    return {"status": "ready"}
 
 
 @api_router.get("/buildings", response_model=list[BuildingOut])

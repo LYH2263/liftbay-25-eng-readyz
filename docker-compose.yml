@@ -21,6 +21,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # 就绪探针：库不可用/探测超时时非 200，容器标记为不健康，不接派工流量
+      test: ["CMD", "python", "-c", "import urllib.request,sys\ntry:\n    code=urllib.request.urlopen('http://localhost:9200/api/readyz', timeout=3).status\nexcept Exception:\n    code=0\nsys.exit(0 if code==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   frontend:
     build: ./frontend
     ports: ["4200:80"]
