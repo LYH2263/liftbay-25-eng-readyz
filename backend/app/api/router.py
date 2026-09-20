@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.readiness import probe_database
 from app.models.models import Building, CallTicket, DispatchLog, ElevatorCar
 from app.schemas.schemas import (
     BuildingOut,
@@ -20,7 +22,29 @@ api_router = APIRouter()
 
 @api_router.get("/health")
 def health():
+    """存活探针（liveness）：仅表示进程能响应 HTTP，不探测数据库。
+
+    数据库故障时仍返回 200；编排层不应据此接入派工流量，
+    是否可接流量以 /readyz 为准。
+    """
     return {"status": "ok"}
+
+
+@api_router.get("/readyz")
+def readyz():
+    """就绪探针（readiness）：进程存活且数据库可连接才返回 200。
+
+    探测为只读轻量查询（buildings 表存在可查即可），不创建呼梯、
+    不写派工回放。数据库不可用或探测超时返回 503，正文带稳定字段
+    status=not_ready 与简要原因，供编排层摘除流量。
+    """
+    ready, reason = probe_database()
+    if ready:
+        return {"status": "ready", "checks": {"database": "ok"}}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready", "checks": {"database": reason}},
+    )
 
 
 @api_router.get("/buildings", response_model=list[BuildingOut])

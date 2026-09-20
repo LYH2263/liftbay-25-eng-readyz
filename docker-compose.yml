@@ -21,6 +21,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # 就绪探针：库不可达时返回 503，容器标记为 unhealthy（不写任何业务数据）。
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:9200/api/readyz', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   frontend:
     build: ./frontend
     ports: ["4200:80"]
